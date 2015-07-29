@@ -72,8 +72,8 @@ public:
     bool stopStream();
 
 
-    int updateData(cv::Mat rgb);
-    int updateData(cv::Mat depth, cv::Mat ir);
+    int updateData(Mat *rgb);
+    int updateData(cv::Mat * depth, cv::Mat * ir);
     void createImages(void * voidData);
 
 

@@ -144,11 +144,12 @@ bool CameraDriver::setFormat(){
     pixfmt[4] = 0;
     trys = 255;
     while(trys-- > 0){
+        cout << "try fmt" << endl;
         memset(&fmtdesc, 0, sizeof(fmtdesc));
         fmtdesc.index = i;
         fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         if (-1 == ioctl(fd, VIDIOC_ENUM_FMT, &fmtdesc)){  // Get video format
-            perror("enum fmt asd");
+            perror("enum fmt");
             break;
         }
         *((__u32 *)pixfmt) = fmtdesc.pixelformat;
@@ -404,11 +405,13 @@ bool CameraDriver::stopStream(){
 // return codes:
 // 1 - OK
 // 2 - no device
+// 3 - wrong format
+// 4 - idk
 int CameraDriver::updateData(cv::Mat * depth, cv::Mat * ir)
 {
     uint dMask = OPEN | STREAM;
     if((state & dMask) != dMask){
-        return;
+        return 4;
     }
     struct v4l2_buffer dqbuf;
     memset(&dqbuf, 0, sizeof(dqbuf));
@@ -428,85 +431,30 @@ int CameraDriver::updateData(cv::Mat * depth, cv::Mat * ir)
     } else {
         // VIDIOC_DQBUF doesn't actually return pointer to data when using mmap
         // Structure has index that can be used to look up pointer
-        void * data = (void *)buffers[dqbuf.index].m.userptr;
+        void * voidData = (void *)buffers[dqbuf.index].m.userptr;
         // Do something with data
 //        emit newData(data);
-        createImages(data);
+        //createImages(data);
+        const int width = v4l2Format.fmt.pix.width;
+        const int height = v4l2Format.fmt.pix.height;
+        const u_int32_t pixelFormat = v4l2Format.fmt.pix.pixelformat;
+        if(pixelFormat != INRI)
+        {
+            cout << "wrong call, scrub:" << pixelFormat << endl;
+            ioctl(fd, VIDIOC_QBUF, &dqbuf);
+            return 2;
+        }
 
-        // tell driver it can reuse framebuffer
-        ioctl(fd, VIDIOC_QBUF, &dqbuf);
-        // signal repaint();
-        return 1;
-    }
-}
-int CameraDriver::updateData(cv::Mat * rgb)
-{
-    uint dMask = OPEN | STREAM;
-    if((state & dMask) != dMask){
-        return;
-    }
-    struct v4l2_buffer dqbuf;
-    memset(&dqbuf, 0, sizeof(dqbuf));
-    dqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // cannot fetch buffer
-    dqbuf.memory = V4L2_MEMORY_MMAP;          // without these fields set
+        Mat depth_cv_rgb(height,width,CV_8UC3);
+        Mat ir_cv_rgb(height,width,CV_8UC3);
 
-    // get info of buffer that is oldest in queue "dequeue buffer"
-    if (-1 == ioctl(fd, VIDIOC_DQBUF, &dqbuf)) {
-       if(errno == EAGAIN){
-           // frame not ready yet
-       } else if(errno == ENODEV){
-           return 2;
-       } else {
-           perror("readbuf");
-           cout << "err!" << endl;
-       }
-    } else {
-        // VIDIOC_DQBUF doesn't actually return pointer to data when using mmap
-        // Structure has index that can be used to look up pointer
-        void * data = (void *)buffers[dqbuf.index].m.userptr;
-        // Do something with data
-//        emit newData(data);
-        createImages(data);
 
-        // tell driver it can reuse framebuffer
-        ioctl(fd, VIDIOC_QBUF, &dqbuf);
-        // signal repaint();
-        return 1;
-    }
-}
-void CameraDriver::createImages(void * voidData){
-    const int width = v4l2Format.fmt.pix.width;
-    const int height = v4l2Format.fmt.pix.height;
-    const u_int32_t pixelFormat = v4l2Format.fmt.pix.pixelformat;
-    u_int8_t * data = (u_int8_t *)voidData;
+        u_int8_t * data = (u_int8_t *)voidData;
 
-    Mat color_cv; //(height,width,CV_8UC2);
-    Mat color_cv_rgb;
-    Mat depth_cv(height,width, CV_16U);
-    Mat ir_cv(height,width, CV_8U);
-    Mat depth_cv_8;
-    Mat depth_cv_rgb(height,width,CV_8UC3);
-    Mat ir_cv_rgb(height,width,CV_8UC3);
+        Mat depth_cv(height,width, CV_16U);
+        Mat ir_cv(height,width, CV_8U);
+        Mat depth_cv_8;
 
-    switch(pixelFormat){
-    case YUYV:
-        color_cv = Mat(height,width, CV_8UC2, data);
-        cvtColor(color_cv,color_cv_rgb,CV_YUV2RGB_YUYV);
-        colorImage = QImage(color_cv_rgb.data,color_cv_rgb.cols,color_cv_rgb.rows,
-                            color_cv_rgb.step,QImage::Format_RGB888).copy();
-        emit newColorImage(colorImage);
-        break;
-    case INVZ:
-    case INVR:
-        // process depth
-        break;
-    case INVI:
-    case RELI:
-        // process infrared
-        break;
-    case INZI:
-    case INRI:
-        //process depth/ir
         for(int j = 0 ; j < height ; j++){
             int step24 = width*3*j;
             for(int i = 0 ; i < width ; i++){
@@ -525,14 +473,138 @@ void CameraDriver::createImages(void * voidData){
         }
         depth_cv.convertTo(depth_cv_8,CV_8U,1.0/256.0);
         cvtColor(depth_cv_8,depth_cv_rgb,CV_GRAY2RGB);
-        depthImage = QImage(depth_cv_rgb.data,depth_cv_rgb.cols,depth_cv_rgb.rows,
-                            depth_cv_rgb.step,QImage::Format_RGB888).copy();
-        emit newDepthImage(depthImage);
         cvtColor(ir_cv,ir_cv_rgb,CV_GRAY2RGB);
-        infraredImage = QImage(ir_cv_rgb.data,ir_cv_rgb.cols,ir_cv_rgb.rows,
-                            ir_cv_rgb.step,QImage::Format_RGB888).copy();
-        emit newInfraredImage(infraredImage);
 
-        break;
+        *depth = depth_cv_rgb;
+        *ir = ir_cv_rgb;
+
+        // tell driver it can reuse framebuffer
+        ioctl(fd, VIDIOC_QBUF, &dqbuf);
+        // signal repaint();
+        return 1;
     }
 }
+int CameraDriver::updateData(cv::Mat * rgb)
+{
+    uint dMask = OPEN | STREAM;
+    if((state & dMask) != dMask){
+        return 4;
+    }
+    struct v4l2_buffer dqbuf;
+    memset(&dqbuf, 0, sizeof(dqbuf));
+    dqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE; // cannot fetch buffer
+    dqbuf.memory = V4L2_MEMORY_MMAP;          // without these fields set
+
+    // get info of buffer that is oldest in queue "dequeue buffer"
+    if (-1 == ioctl(fd, VIDIOC_DQBUF, &dqbuf)) {
+       if(errno == EAGAIN){
+           // frame not ready yet
+       } else if(errno == ENODEV){
+           return 2;
+       } else {
+           perror("readbuf");
+           cout << "err!" << endl;
+       }
+    } else {
+        // VIDIOC_DQBUF doesn't actually return pointer to data when using mmap
+        // Structure has index that can be used to look up pointer
+        void * dataV = (void *)buffers[dqbuf.index].m.userptr;
+        // Do something with data
+//        emit newData(data);
+
+        // inline fucking everything
+        //createImages(data);
+        const int width = v4l2Format.fmt.pix.width;
+        const int height = v4l2Format.fmt.pix.height;
+        const u_int32_t pixelFormat = v4l2Format.fmt.pix.pixelformat;
+        if(pixelFormat != YUYV)
+        {
+            cout << "wrong call, scrub" << endl;
+            ioctl(fd, VIDIOC_QBUF, &dqbuf);
+            return 2;
+        }
+
+        Mat color_cv_rgb;
+
+        u_int8_t * data = (u_int8_t *)dataV;
+        Mat color_cv;
+        //Mat color_cv_rgb;
+
+        color_cv = Mat(height,width, CV_8UC2, data);
+        cvtColor(color_cv,color_cv_rgb,CV_YUV2RGB_YUYV);
+
+        *rgb = color_cv_rgb;
+
+        //namedWindow( "Display window driver", WINDOW_AUTOSIZE );// Create a window for display.
+        //imshow( "Display window driver", color_cv_rgb );                   // Show our image inside it.
+
+        //waitKey(0);
+
+        // tell driver it can reuse framebuffer
+        ioctl(fd, VIDIOC_QBUF, &dqbuf);
+        // signal repaint();
+        return 1;
+    }
+}
+//void CameraDriver::createImages(void * voidData){
+//    const int width = v4l2Format.fmt.pix.width;
+//    const int height = v4l2Format.fmt.pix.height;
+//    const u_int32_t pixelFormat = v4l2Format.fmt.pix.pixelformat;
+//    u_int8_t * data = (u_int8_t *)voidData;
+
+//    Mat color_cv; //(height,width,CV_8UC2);
+//    Mat color_cv_rgb;
+//    Mat depth_cv(height,width, CV_16U);
+//    Mat ir_cv(height,width, CV_8U);
+//    Mat depth_cv_8;
+//    Mat depth_cv_rgb(height,width,CV_8UC3);
+//    Mat ir_cv_rgb(height,width,CV_8UC3);
+
+//    switch(pixelFormat){
+//    case YUYV:
+//        color_cv = Mat(height,width, CV_8UC2, data);
+//        cvtColor(color_cv,color_cv_rgb,CV_YUV2RGB_YUYV);
+//        colorImage = QImage(color_cv_rgb.data,color_cv_rgb.cols,color_cv_rgb.rows,
+//                            color_cv_rgb.step,QImage::Format_RGB888).copy();
+//        emit newColorImage(colorImage);
+//        break;
+//    case INVZ:
+//    case INVR:
+//        // process depth
+//        break;
+//    case INVI:
+//    case RELI:
+//        // process infrared
+//        break;
+//    case INZI:
+//    case INRI:
+//        //process depth/ir
+//        for(int j = 0 ; j < height ; j++){
+//            int step24 = width*3*j;
+//            for(int i = 0 ; i < width ; i++){
+//                int pixel24 = step24 + 3*i;
+//                u_int16_t depth = *(u_int16_t *)(data + pixel24);
+//                u_int8_t ir = data[pixel24 + 2];
+////                depth = int(depth/31.25 + 0.5); // convert to mm
+//                u_int8_t high = (depth >> 8) & 0xff;
+//                u_int8_t low = depth & 0xff;
+//                Vec2b depthpix_cv;
+//                depthpix_cv[0] = low;
+//                depthpix_cv[1] = high;
+//                depth_cv.at<cv::Vec2b>(j,i) = depthpix_cv;
+//                ir_cv.at<uchar>(j,i) = ir;
+//            }
+//        }
+//        depth_cv.convertTo(depth_cv_8,CV_8U,1.0/256.0);
+//        cvtColor(depth_cv_8,depth_cv_rgb,CV_GRAY2RGB);
+//        depthImage = QImage(depth_cv_rgb.data,depth_cv_rgb.cols,depth_cv_rgb.rows,
+//                            depth_cv_rgb.step,QImage::Format_RGB888).copy();
+//        emit newDepthImage(depthImage);
+//        cvtColor(ir_cv,ir_cv_rgb,CV_GRAY2RGB);
+//        infraredImage = QImage(ir_cv_rgb.data,ir_cv_rgb.cols,ir_cv_rgb.rows,
+//                            ir_cv_rgb.step,QImage::Format_RGB888).copy();
+//        emit newInfraredImage(infraredImage);
+
+//        break;
+//    }
+//}
