@@ -73,7 +73,7 @@ public:
 
 
     int updateData(Mat *rgb);
-    int updateData(cv::Mat * depth, cv::Mat * ir);
+    int updateData(cv::Mat * depthmat, cv::Mat * irmat);
     void createImages(void * voidData);
 
 

@@ -407,7 +407,7 @@ bool CameraDriver::stopStream(){
 // 2 - no device
 // 3 - wrong format
 // 4 - idk
-int CameraDriver::updateData(cv::Mat * depth, cv::Mat * ir)
+int CameraDriver::updateData(cv::Mat * depthmat, cv::Mat * irmat)
 {
     uint dMask = OPEN | STREAM;
     if((state & dMask) != dMask){
@@ -461,22 +461,31 @@ int CameraDriver::updateData(cv::Mat * depth, cv::Mat * ir)
                 int pixel24 = step24 + 3*i;
                 u_int16_t depth = *(u_int16_t *)(data + pixel24);
                 u_int8_t ir = data[pixel24 + 2];
+
+                // removed because why the hell not
 //                depth = int(depth/31.25 + 0.5); // convert to mm
-                u_int8_t high = (depth >> 8) & 0xff;
-                u_int8_t low = depth & 0xff;
-                Vec2b depthpix_cv;
-                depthpix_cv[0] = low;
-                depthpix_cv[1] = high;
-                depth_cv.at<cv::Vec2b>(j,i) = depthpix_cv;
+//                u_int8_t high = (depth >> 8) & 0xff;
+//                u_int8_t low = depth & 0xff;
+
+//                Vec2b depthpix_cv;
+//                depthpix_cv[0] = low;
+//                depthpix_cv[1] = high;
+//                depth_cv.at<cv::Vec2b>(j,i) = depthpix_cv;
                 ir_cv.at<uchar>(j,i) = ir;
+                depth_cv.at<ushort>(j,i) = depth;
+//                if(i == 100 && j == 100)
+//                {
+//                    std::cout << "depth" << depth << std::endl;
+//                    std::cout << "depth2" << depth_cv.at<ushort>(i,j) << std::endl;
+//                }
             }
         }
-        depth_cv.convertTo(depth_cv_8,CV_8U,1.0/256.0);
-        cvtColor(depth_cv_8,depth_cv_rgb,CV_GRAY2RGB);
-        cvtColor(ir_cv,ir_cv_rgb,CV_GRAY2RGB);
+//        depth_cv.convertTo(depth_cv_8,CV_8U,1.0/256.0);
+//        cvtColor(depth_cv_8,depth_cv_rgb,CV_GRAY2RGB);
+//        cvtColor(ir_cv,ir_cv_rgb,CV_GRAY2RGB);
 
-        *depth = depth_cv_rgb;
-        *ir = ir_cv_rgb;
+        *depthmat = depth_cv;
+        *irmat = ir_cv;
 
         // tell driver it can reuse framebuffer
         ioctl(fd, VIDIOC_QBUF, &dqbuf);
