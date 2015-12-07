@@ -1,6 +1,6 @@
 #include "frame.h"
 
-Frame::Frame(std::vector<cv::Mat> rawStackDepth, cv::Mat cameraMatrix)
+Frame::Frame(std::vector<cv::Mat> rawStackDepth, cv::Mat cameraMatrix, Eigen::Vector4f origin, Eigen::Quaternionf orientation)
 {
     // zuweisungen
     // set converter

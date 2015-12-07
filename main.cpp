@@ -1,7 +1,6 @@
 #include <iostream>
 #include <highgui.h>
 #include <opencv2/opencv.hpp>
-#include "cameradriver.h"
 #include <time.h>
 #include <pcl/common/common_headers.h>
 #include <pcl/visualization/pcl_visualizer.h>
@@ -11,26 +10,11 @@
 #include <cmath>
 #include <boost/thread/thread.hpp>
 #include "converter.h"
-
-
-//#include <array>
-
-
-//#include <string.h>
-//#include <linux/videodev2.h>
-//#include <linux/uvcvideo.h>
-//#include <linux/usb/video.h>
-//#include <fcntl.h>
-//#include <stdio.h>
-//#include <sys/ioctl.h>
-//#include <sys/mman.h>
-//#include <errno.h>
-//#include <unistd.h>
-
+#include "camerawrapper.h"
 
 using namespace std;
 
-
+// TODO: call by reference und so
 void displayImages(cv::Mat result_zeroes, cv::Mat result_ir, cv::Mat depthimage, cv::Mat distCoeffs, std::vector<cv::Mat> irlist, cv::Mat result_depth, cv::Mat cameraMatrix)
 {
 
@@ -74,46 +58,13 @@ void displayImages(cv::Mat result_zeroes, cv::Mat result_ir, cv::Mat depthimage,
 }
 
 
-
-void displayCameraProperties(cv::Mat cameraMatrix)
-{
-    double apertureWidth;
-    double apertureHeight;
-    double fovx;
-    double fovy;
-    double focalLength;
-    Point2d principalPoint;
-    double aspectRatio;
-    calibrationMatrixValues(cameraMatrix, cvSize(640,480), apertureWidth, apertureHeight, fovx, fovy, focalLength, principalPoint, aspectRatio);
-    std::cout << "Camera-Matrix Data:" << "\nAperture (W/H): " << apertureWidth << " / " << apertureHeight << "\nFoV (x/y): "
-              << fovx << " / " << fovy << "\nPrincipal point: " << principalPoint << "\nAspect ratio: " << aspectRatio << std::endl;
-}
-
 int main()
 {
+    CameraWrapper cw;
 
-    std::cout << "OpenCV version : " << CV_VERSION << std::endl;
+    cw.initCamera();
 
-    // read settings from file
-    cv::Mat cameraMatrix, distCoeffs;
-    cv::FileStorage fs2("calibration.yml", cv::FileStorage::READ);
-    fs2["cameraMatrix"] >> cameraMatrix;
-    fs2["distCoeffs"] >> distCoeffs;
 
-    // Get some infos from the calibration matrix
-    displayCameraProperties(cameraMatrix);
-
-    // nanosleep
-    struct timespec slptm;
-    slptm.tv_sec = 0;
-    slptm.tv_nsec = 50000000;      //1000 ns = 1 us
-
-    //CameraDriver *colorcam = new CameraDriver("/dev/video1", 0x56595559);
-    CameraDriver *depthcam = new CameraDriver("/dev/video2", 0x49524e49);
-    //colorcam->startVideo();
-    if(!depthcam->startVideo())
-        std::cout << "ALLES KACKE, NIX GEHT" << std::endl;
-    sleep(1);
 
     //namedWindow( "rgb window", WINDOW_AUTOSIZE );
     namedWindow( "depth", WINDOW_AUTOSIZE );
@@ -122,16 +73,13 @@ int main()
     namedWindow( "depth averages", WINDOW_AUTOSIZE);
     namedWindow( "zeroes", WINDOW_AUTOSIZE);
 
-    int key;
-    cv::Mat rgbimage, irimage, depthimage;
 
-    std::vector<cv::Mat> irlist, depthlist;
+    std::vector<cv::Mat> depthlist;
     cv::Mat result_ir(480, 640, CV_8U, Scalar::all(0));
     cv::Mat result_zeroes(480, 640, CV_8U, Scalar::all(0));
     cv::Mat result_depth(480, 640, CV_16U, Scalar::all(0));
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
-
 
     boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
     viewer->setBackgroundColor (0, 0, 0);
@@ -140,30 +88,15 @@ int main()
     viewer->initCameraParameters ();
     viewer->addPointCloud<pcl::PointXYZ> (cloud, "sample cloud");
 
+    int key;
+
     while(true)
     {
-        // clear buffer
-        for(int i = 0; i<3; i++)
-        {
-            nanosleep(&slptm,NULL);
-            //colorcam->updateData(&rgbimage);
-            depthcam->updateData(&depthimage, &irimage);
-        }
-
-        // grab image vectors
-        irlist.clear();
+        // muss ich das clearen? überschreibs ja. keine ahnung :(
         depthlist.clear();
-        for(int i = 0; i<40; i++)
-        {
-            nanosleep(&slptm,NULL);
-            //colorcam->updateData(&rgbimage);
-            depthcam->updateData(&depthimage, &irimage);
-            irlist.push_back(irimage.clone());
-            depthlist.push_back(depthimage.clone());
-        }
+        depthlist = cw.recordStack(40);
 
-
-        //static void analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Mat result);
+        std::cout << "Distance in center: " << (int)depthlist[0].at<ushort>(240,320) << std::endl;
 
         Converter::analyseStack(depthlist, result_zeroes, result_depth);
         Converter::undistortDepth(result_depth);
@@ -173,7 +106,7 @@ int main()
 
 
         cloud->clear();
-        Converter::depthTo3d(result_depth,cameraMatrix,cloud);
+        Converter::depthTo3d(result_depth,cw.cameraMatrix,cloud);
 
         // a => stop; rest => next frame
         key = waitKey(0);
@@ -183,11 +116,10 @@ int main()
         std::cout << key << std::endl;
         if(key == 97)
             break;
-
         if(key == 119)
         {
-            viewer->updatePointCloud(cloud, "sample cloud");
-            viewer->spin();
+            //viewer->updatePointCloud(cloud, "sample cloud");
+            //viewer->spin();
 //            while (!viewer->wasStopped ())
 //            {
 //                viewer->spinOnce (100);
@@ -197,8 +129,7 @@ int main()
 
     }
 
-    //colorcam->stopVideo();
-    depthcam->stopVideo();
+    cw.shutdownCamera();
 
 
     return 0;

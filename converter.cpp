@@ -31,9 +31,9 @@ std::string Converter::type2str(int type) {
 // TODO: add implementation for IR, check type
 void Converter::analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Mat result)
 {
-    for (int i = 0; i < irlist[0].rows; i++)
+    for (int i = 0; i < stack[0].rows; i++)
     {
-        for (int j = 0; j < irlist[0].cols; j++)
+        for (int j = 0; j < stack[0].cols; j++)
         {
             int tempresult_depth = 0;
             int depth_zeroes = 0;
@@ -47,7 +47,7 @@ void Converter::analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Ma
                 result.at<ushort>(i,j) = tempresult_depth/(stack.size()-depth_zeroes);
             else
                 result.at<ushort>(i,j) = 0;
-            believe.at<uchar>(i,j) = (int)((240/irlist.size())*depth_zeroes);
+            believe.at<uchar>(i,j) = (int)((240/stack.size())*depth_zeroes);
         }
     }
 
