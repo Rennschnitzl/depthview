@@ -56,7 +56,7 @@ public:
 
     bool closeCamera();
     bool openCamera();
-    void startVideo();
+    bool startVideo();
     void stopVideo();
     void printState();
     bool setFormat();

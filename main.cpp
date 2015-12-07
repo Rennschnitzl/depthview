@@ -1,8 +1,20 @@
 #include <iostream>
+#include <highgui.h>
 #include <opencv2/opencv.hpp>
 #include "cameradriver.h"
 #include <time.h>
+#include <pcl/common/common_headers.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/io/io.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <cmath>
+#include <boost/thread/thread.hpp>
+#include "converter.h"
+
+
 //#include <array>
+
 
 //#include <string.h>
 //#include <linux/videodev2.h>
@@ -18,22 +30,90 @@
 
 using namespace std;
 
+
+void displayImages(cv::Mat result_zeroes, cv::Mat result_ir, cv::Mat depthimage, cv::Mat distCoeffs, std::vector<cv::Mat> irlist, cv::Mat result_depth, cv::Mat cameraMatrix)
+{
+
+
+    std::cout << "Distance in center: " << (int)depthimage.at<ushort>(240,320) << std::endl;
+    depthimage.at<ushort>(240,320) = 65000;
+
+    // colormap
+    // convert for colormapping
+    Mat depth_cv_8_avg, depth_cv_8;
+    result_depth.convertTo(depth_cv_8_avg,CV_8U,1.0/256.0);
+    depthimage.convertTo(depth_cv_8,CV_8U,1.0/256.0);
+
+    Mat cm_depth_avg, cm_depth;
+    applyColorMap(depth_cv_8_avg, cm_depth_avg, COLORMAP_HSV  );
+    applyColorMap(depth_cv_8, cm_depth, COLORMAP_HSV  );
+
+    //imshow( "rgb window", rgbimage );
+
+    // show depth related
+    imshow( "depth", cm_depth );
+    imshow( "depth averages", cm_depth_avg);
+    //        imshow( "depth", depthimage );
+    //        imshow( "depth averages", result_depth);
+    imshow( "zeroes", result_zeroes);
+
+    // show ir related
+    imshow( "ir", irlist[0] );
+    imshow( "ir averages", result_ir);
+
+    // REKTification
+    Mat view, rview, map1, map2;
+    initUndistortRectifyMap(cameraMatrix, distCoeffs, Mat(),
+                            getOptimalNewCameraMatrix(cameraMatrix, distCoeffs, irlist[0].size(), 1, irlist[0].size(), 0),
+            irlist[0].size(), CV_16SC2, map1, map2);
+    view = irlist[0];
+    remap(view, rview, map1, map2, INTER_LINEAR);
+    imshow("Image View", rview);
+
+    imshow("pure depth", depthimage);
+}
+
+
+
+void displayCameraProperties(cv::Mat cameraMatrix)
+{
+    double apertureWidth;
+    double apertureHeight;
+    double fovx;
+    double fovy;
+    double focalLength;
+    Point2d principalPoint;
+    double aspectRatio;
+    calibrationMatrixValues(cameraMatrix, cvSize(640,480), apertureWidth, apertureHeight, fovx, fovy, focalLength, principalPoint, aspectRatio);
+    std::cout << "Camera-Matrix Data:" << "\nAperture (W/H): " << apertureWidth << " / " << apertureHeight << "\nFoV (x/y): "
+              << fovx << " / " << fovy << "\nPrincipal point: " << principalPoint << "\nAspect ratio: " << aspectRatio << std::endl;
+}
+
 int main()
 {
+
+    std::cout << "OpenCV version : " << CV_VERSION << std::endl;
+
+    // read settings from file
+    cv::Mat cameraMatrix, distCoeffs;
+    cv::FileStorage fs2("calibration.yml", cv::FileStorage::READ);
+    fs2["cameraMatrix"] >> cameraMatrix;
+    fs2["distCoeffs"] >> distCoeffs;
+
+    // Get some infos from the calibration matrix
+    displayCameraProperties(cameraMatrix);
+
     // nanosleep
     struct timespec slptm;
     slptm.tv_sec = 0;
     slptm.tv_nsec = 50000000;      //1000 ns = 1 us
 
-
     //CameraDriver *colorcam = new CameraDriver("/dev/video1", 0x56595559);
     CameraDriver *depthcam = new CameraDriver("/dev/video2", 0x49524e49);
-
     //colorcam->startVideo();
-    depthcam->startVideo();
-
+    if(!depthcam->startVideo())
+        std::cout << "ALLES KACKE, NIX GEHT" << std::endl;
     sleep(1);
-    cv::Mat rgbimage, irimage, depthimage;
 
     //namedWindow( "rgb window", WINDOW_AUTOSIZE );
     namedWindow( "depth", WINDOW_AUTOSIZE );
@@ -41,12 +121,24 @@ int main()
     namedWindow( "ir averages", WINDOW_AUTOSIZE);
     namedWindow( "depth averages", WINDOW_AUTOSIZE);
     namedWindow( "zeroes", WINDOW_AUTOSIZE);
+
     int key;
+    cv::Mat rgbimage, irimage, depthimage;
 
     std::vector<cv::Mat> irlist, depthlist;
     cv::Mat result_ir(480, 640, CV_8U, Scalar::all(0));
     cv::Mat result_zeroes(480, 640, CV_8U, Scalar::all(0));
     cv::Mat result_depth(480, 640, CV_16U, Scalar::all(0));
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+
+
+    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
+    viewer->setBackgroundColor (0, 0, 0);
+    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
+    viewer->addCoordinateSystem (1.0);
+    viewer->initCameraParameters ();
+    viewer->addPointCloud<pcl::PointXYZ> (cloud, "sample cloud");
 
     while(true)
     {
@@ -58,9 +150,9 @@ int main()
             depthcam->updateData(&depthimage, &irimage);
         }
 
+        // grab image vectors
         irlist.clear();
         depthlist.clear();
-        // grab image vector
         for(int i = 0; i<40; i++)
         {
             nanosleep(&slptm,NULL);
@@ -71,65 +163,38 @@ int main()
         }
 
 
-        for (int i = 0; i < irlist[0].rows; i++)
-        {
-            for (int j = 0; j < irlist[0].cols; j++)
-            {
-                int tempresult_ir = 0;
-                int tempresult_depth = 0;
-                int depth_zeroes = 0;
-                for(int il = 0; il < irlist.size(); il++) {
-                    tempresult_ir += (int)irlist[il].at<uchar>(i,j);
-                    tempresult_depth += (int)depthlist[il].at<ushort>(i,j);
-                    if((int)depthlist[il].at<ushort>(i,j) == 0)
-                        depth_zeroes++;
-                }
-                result_ir.at<uchar>(i,j) = tempresult_ir/irlist.size();
-                if(depthlist.size()-depth_zeroes != 0)
-                    result_depth.at<ushort>(i,j) = tempresult_depth/(depthlist.size()-depth_zeroes);
-                else
-                    result_depth.at<ushort>(i,j) = 0;
-                result_zeroes.at<uchar>(i,j) = (int)((240/irlist.size())*depth_zeroes);
-            }
-        }
+        //static void analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Mat result);
+
+        Converter::analyseStack(depthlist, result_zeroes, result_depth);
+        Converter::undistortDepth(result_depth);
 
 
-//        cv::imwrite("depth.png", depthimage);
-        std::cout << "Distance in center: " << (int)depthimage.at<ushort>(240,320) << std::endl;
-        depthimage.at<ushort>(240,320) = 65000;
+        //displayImages(result_zeroes, result_ir, depthimage, distCoeffs, irlist, result_depth, cameraMatrix);
 
 
-        // colormap
-        // convert for colormapping
-        Mat depth_cv_8_avg, depth_cv_8;
-        result_depth.convertTo(depth_cv_8_avg,CV_8U,1.0/256.0);
-        depthimage.convertTo(depth_cv_8,CV_8U,1.0/256.0);
-
-        Mat cm_depth_avg, cm_depth;
-        applyColorMap(depth_cv_8_avg, cm_depth_avg, COLORMAP_HSV  );
-        applyColorMap(depth_cv_8, cm_depth, COLORMAP_HSV  );
-
-        //imshow( "rgb window", rgbimage );
-
-        // show depth related
-        imshow( "depth", cm_depth );
-        imshow( "depth averages", cm_depth_avg);
-//        imshow( "depth", depthimage );
-//        imshow( "depth averages", result_depth);
-        imshow( "zeroes", result_zeroes);
-
-        // show ir related
-        imshow( "ir", irlist[0] );
-        imshow( "ir averages", result_ir);
-
-
-
-
+        cloud->clear();
+        Converter::depthTo3d(result_depth,cameraMatrix,cloud);
 
         // a => stop; rest => next frame
         key = waitKey(0);
-        if(key == 1048673)
+        // strange opencv workaround
+        // see: http://stackoverflow.com/questions/9172170/python-opencv-cv-waitkey-spits-back-weird-output-on-ubuntu-modulo-256-maps-corre
+        key -= 0x100000;
+        std::cout << key << std::endl;
+        if(key == 97)
             break;
+
+        if(key == 119)
+        {
+            viewer->updatePointCloud(cloud, "sample cloud");
+            viewer->spin();
+//            while (!viewer->wasStopped ())
+//            {
+//                viewer->spinOnce (100);
+//                boost::this_thread::sleep (boost::posix_time::microseconds (100000));
+//            }
+        }
+
     }
 
     //colorcam->stopVideo();

@@ -104,8 +104,9 @@ bool CameraDriver::closeCamera(){
     return true;
 }
 
-void CameraDriver::startVideo(){
-    openCamera();
+bool CameraDriver::startVideo(){
+    if(!openCamera())
+        return false;
     //getControls();
     setFormat();
     reqBuffers();
@@ -116,6 +117,7 @@ void CameraDriver::startVideo(){
     startStream();
     //startClock();
     printState();
+    return true;
 }
 
 void CameraDriver::stopVideo(){
@@ -463,7 +465,9 @@ int CameraDriver::updateData(cv::Mat * depthmat, cv::Mat * irmat)
                 u_int8_t ir = data[pixel24 + 2];
 
                 // removed because why the hell not
-//                depth = int(depth/31.25 + 0.5); // convert to mm
+
+                // TODO: float, überall float D:
+                //depth = int(depth/31.25 + 0.5); // convert to mm
 //                u_int8_t high = (depth >> 8) & 0xff;
 //                u_int8_t low = depth & 0xff;
 
