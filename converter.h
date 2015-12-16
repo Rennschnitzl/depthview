@@ -30,10 +30,11 @@ class Converter
 public:
     Converter();
     static std::string type2str(int type);
-    static void analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Mat result);
+    static void analyseStack(std::vector<cv::Mat> &stack, cv::Mat &believe, cv::Mat &result);
     static void undistortDepth(cv::Mat depth);
     static void rescaleDepth(cv::InputArray in_in, int depth, cv::OutputArray out_out);
-    static void depthTo3d(const cv::Mat& in_depth, const cv::Mat& K, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+    static void depthTo3d(const cv::Mat& in_depth, const cv::Mat& K, pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud);
+    static void averageIR(const std::vector<cv::Mat> & IRstack, cv::Mat & ir_avg);
 };
 
 #endif // CONVERTER_H

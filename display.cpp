@@ -3,14 +3,14 @@
 Display::Display()
 {
     namedWindow( "depth", cv::WINDOW_AUTOSIZE );
-    //namedWindow( "ir", cv::WINDOW_AUTOSIZE );
+    namedWindow( "ir", cv::WINDOW_AUTOSIZE );
     namedWindow( "depth colormap", cv::WINDOW_AUTOSIZE);
 }
 
 void Display::displayDepth(const cv::Mat & image)
 {
-//    std::cout << "Distance in center: " << (int)depthimage.at<ushort>(240,320) << std::endl;
-//    depthimage.at<ushort>(240,320) = 65000;
+    std::cout << "Distance in center: " << (int)image.at<ushort>(240,320) << std::endl;
+    //image.at<ushort>(240,320) = 65000;
     cv::imshow( "depth", image);
 }
 

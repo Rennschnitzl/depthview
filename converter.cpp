@@ -29,13 +29,13 @@ std::string Converter::type2str(int type) {
 }
 
 // TODO: add implementation for IR, check type
-void Converter::analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Mat result)
+void Converter::analyseStack(std::vector<cv::Mat> &stack, cv::Mat & believe, cv::Mat & result)
 {
     for (int i = 0; i < stack[0].rows; i++)
     {
         for (int j = 0; j < stack[0].cols; j++)
         {
-            int tempresult_depth = 0;
+            unsigned long tempresult_depth = 0;
             int depth_zeroes = 0;
             for(int il = 0; il < stack.size(); il++)
             {
@@ -43,7 +43,8 @@ void Converter::analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Ma
                 if((int)stack[il].at<ushort>(i,j) == 0)
                     depth_zeroes++;
             }
-            if(depth_zeroes < stack.size())
+            // TODO: filter von unzuverlässigen daten. möglicherweise in neue methode auslagern
+            if(depth_zeroes < stack.size()-0)
                 result.at<ushort>(i,j) = tempresult_depth/(stack.size()-depth_zeroes);
             else
                 result.at<ushort>(i,j) = 0;
@@ -72,8 +73,9 @@ void Converter::analyseStack(std::vector<cv::Mat> stack, cv::Mat believe, cv::Ma
 //                result_depth.at<ushort>(i,j) = 0;
 //            result_zeroes.at<uchar>(i,j) = (int)((240/irlist.size())*depth_zeroes);
 //        }
-//    }
+    //    }
 }
+
 
 void Converter::undistortDepth(cv::Mat depth)
 {
@@ -102,6 +104,7 @@ void Converter::undistortDepth(cv::Mat depth)
     }
 }
 
+/// stolen from opencv contribution
 void Converter::rescaleDepth(cv::InputArray in_in, int depth, cv::OutputArray out_out)
 {
     cv::Mat in = in_in.getMat();
@@ -128,7 +131,8 @@ void Converter::rescaleDepth(cv::InputArray in_in, int depth, cv::OutputArray ou
         in.convertTo(out, depth);
 }
 
-void Converter::depthTo3d(const cv::Mat& in_depth, const cv::Mat& K, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+/// stolen (and modified) from opencv contribution
+void Converter::depthTo3d(const cv::Mat& in_depth, const cv::Mat& K, pcl::PointCloud<pcl::PointXYZ>::Ptr & cloud)
 {
     pcl::PointXYZ newPoint;
 
@@ -173,11 +177,26 @@ void Converter::depthTo3d(const cv::Mat& in_depth, const cv::Mat& K, pcl::PointC
             }else
             {
                 newPoint.z = z;
-                newPoint.x = (*x_cache_ptr) * z;
-                newPoint.y = (*y_cache_ptr) * z;
+                newPoint.x = (*x_cache_ptr) * z * -1.0;
+                newPoint.y = (*y_cache_ptr) * z * -1.0;
                 cloud->push_back(newPoint);
             }
 
+        }
+    }
+}
+
+void Converter::averageIR(const std::vector<cv::Mat> & IRstack, cv::Mat & ir_avg)
+{
+    for (int i = 0; i < IRstack[0].rows; i++)
+    {
+        for (int j = 0; j < IRstack[0].cols; j++)
+        {
+            long tempresult_ir = 0;
+            for(int il = 0; il < IRstack.size(); il++) {
+                tempresult_ir += (int)IRstack[il].at<uchar>(i,j);
+            }
+            ir_avg.at<uchar>(i,j) = tempresult_ir/IRstack.size();
         }
     }
 }

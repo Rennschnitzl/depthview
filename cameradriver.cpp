@@ -464,10 +464,10 @@ int CameraDriver::updateData(cv::Mat * depthmat, cv::Mat * irmat)
                 u_int16_t depth = *(u_int16_t *)(data + pixel24);
                 u_int8_t ir = data[pixel24 + 2];
 
-                // removed because why the hell not
-
+                if (depth > 65534)
+                    depth = 0;
                 // TODO: float, überall float D:
-                //depth = int(depth/31.25 + 0.5); // convert to mm
+                depth = int(depth*100/31.25 + 0.5); // convert to mm
 //                u_int8_t high = (depth >> 8) & 0xff;
 //                u_int8_t low = depth & 0xff;
 

@@ -13,7 +13,7 @@ public:
     void initCamera();
     void clearBuffer();
     void shutdownCamera();
-    std::vector<cv::Mat> recordStack(int frames);
+    void recordStack(int frame, std::vector<Mat> &irlist, std::vector<Mat> &depthlist);
     struct timespec slptm;
     cv::Mat cameraMatrix;
     cv::Mat distCoeffs;

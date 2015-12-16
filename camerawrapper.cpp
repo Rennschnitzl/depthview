@@ -65,25 +65,26 @@ void CameraWrapper::shutdownCamera()
     depthcam->stopVideo();
 }
 
-std::vector<Mat> CameraWrapper::recordStack(int frames)
+
+void CameraWrapper::recordStack(int frames, std::vector<Mat> & irlist, std::vector<Mat> & depthlist)
 {
     clearBuffer();
 
+    irlist.clear();
+    depthlist.clear();
+
     cv::Mat rgbimage, irimage, depthimage;
-    std::vector<cv::Mat> irlist, depthlist;
+
     // grab image vectors
-    //irlist.clear();
     depthlist.clear();
     for(int i = 0; i<frames; i++)
     {
         nanosleep(&slptm,NULL);
         //colorcam->updateData(&rgbimage);
         depthcam->updateData(&depthimage, &irimage);
-        //irlist.push_back(irimage.clone());
+        irlist.push_back(irimage.clone());
         depthlist.push_back(depthimage.clone());
     }
-
-    return depthlist;
 }
 
 
